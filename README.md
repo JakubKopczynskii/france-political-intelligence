@@ -1,190 +1,97 @@
-# France Political Intelligence & CAC 40 Portfolio Scenario Simulator
+# France Political Intelligence — 2027 Election × CAC 40
 
-> **Local MVP** — All scenario data is illustrative analyst input.  
-> No live market data. No authentication. For research use only.
+**What happens to French stocks if Le Pen, Philippe, Glucksmann or Mélenchon wins in 2027?**
+
+This app turns every published French presidential poll into win probabilities, then estimates how each of the 40 CAC 40 companies (and your own portfolio) would move under each outcome. The estimates come from how those same stocks actually reacted to past French political shocks.
+
+> Research tool. Not investment advice. Runs locally; portfolio data never leaves your machine.
+
+![Election 2027 page](docs/images/election-2027.jpg)
 
 ---
 
-## Quick Start
+## What it does
+
+| Feature | How it works |
+|---|---|
+| **Presidential 2027 simulation** | Parses every first-round and head-to-head poll on the French Wikipedia poll list, then runs 20,000 two-round Monte Carlo simulations with polling error that widens with time to the vote. Outputs P(reach runoff), P(win), likely runoffs and win odds by political bloc. |
+| **Historical calibration** | Event study of 8 real shocks (2017 and 2022 presidentials, June 2024 dissolution, 2024 legislatives, Barnier, Bayrou and Lecornu government collapses). Each stock's move is measured against the DAX (β-adjusted) so global market noise is removed. |
+| **Two impact models, side by side** | *Factor model*: sector sensitivities × macro shocks, scaled by each company's French/European/global revenue mix. *Historical analog*: what actually happened in comparable episodes. They often disagree, which is the useful part. |
+| **Replay past shocks** | CAC 40 tile map of how every stock moved in each episode, e.g. June 2024: CAC −6.2%, Société Générale −14.9%, BNP −12%. |
+| **What markets are pricing** | Stress gauge from the OAT–Bund 10y spread (ECB), CAC 40 vs DAX and French vs European banks, benchmarked against the June 2024 dissolution. |
+| **Portfolio election exposure** | Upload a CSV and see your P&L under each scenario, the poll-weighted expectation and your biggest drags. Computed locally. |
+| **News intelligence** | RSS feeds from French and international press, ranked by importance, with an AI one-line summary and scenario signal per article (Groq). |
+| **Scenario probabilities** | 40% fixed analyst prior + 35% poll simulation + 15% news + 5% Reddit + 5% Google Trends, refreshed daily with a full audit log and history chart. |
+
+| | |
+|---|---|
+| ![Impact heatmap](docs/images/impact-heatmap.jpg) | ![Replay June 2024](docs/images/replay-june-2024.jpg) |
+| ![Portfolio exposure](docs/images/portfolio-exposure.jpg) | ![Probability history](docs/images/probability-history.jpg) |
+
+---
+
+## Quick start
+
+Requires Python 3.10+ and Node.js 18+.
 
 ```bash
-# 1. Clone and enter the project
+git clone https://github.com/JakubKopczynskii/france-political-intelligence.git
 cd france-political-intelligence
-
-# 2. Copy environment config
-cp .env.example .env
-
-# 3. Install Python dependencies
-pip install -r backend/requirements.txt
-
-# 4. Install Node.js dependencies
-export PATH="/usr/local/lib/nodejs/node-v20.18.0-darwin-x64/bin:$PATH"
+pip3 install -r backend/requirements.txt
 cd frontend && npm install && cd ..
-
-# 5. Start both servers
-./start.sh
+bash start.sh
 ```
 
-Open **http://localhost:3000** in your browser.  
-API docs: **http://localhost:8000/docs**
+Open **http://localhost:3000** (API docs at http://localhost:8000/docs).
 
----
+On first start the backend creates the SQLite database, then fetches polls, prices, historical episodes and the market gauge in the background (about a minute). Data refreshes daily while the backend runs.
 
-## Manual Start (if start.sh has issues)
+### Optional: AI news extraction
 
-**Terminal 1 — Backend:**
-```bash
-cd backend
-python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-**Terminal 2 — Frontend:**
-```bash
-export PATH="/usr/local/lib/nodejs/node-v20.18.0-darwin-x64/bin:$PATH"
-cd frontend
-npm run dev
-```
-
----
-
-## Configuration
-
-Edit `.env` (copied from `.env.example`):
+Create `backend/.env`:
 
 ```bash
-# AI Provider — optional, default is deterministic keyword mode
-AI_PROVIDER=none           # none | gemini | groq | openrouter
-
-# Only needed if AI_PROVIDER is not "none"
-GEMINI_API_KEY=
-GROQ_API_KEY=
-OPENROUTER_API_KEY=
-
-BACKEND_PORT=8000
-DATABASE_URL=sqlite:///./data/france_intel.db
+GROQ_API_KEY=your_key_here
+# GROQ_MODEL=openai/gpt-oss-20b   # default
 ```
 
-**Security note:** `.env` is gitignored. Never commit API keys.
+`.env` files are gitignored. Without a key, the news signal falls back to keyword matching.
 
----
-
-## Running Tests
+### Tests
 
 ```bash
-cd backend
-python3 -m pytest tests/ -v
+cd backend && python3 -m pytest -q
 ```
 
-Expected output: **46 passed** (30 scenario engine + 16 RSS ingestion).
-
 ---
 
-## Application Screens
+## Data sources and what leaves your machine
 
-| Screen | URL | Description |
-|--------|-----|-------------|
-| Overview | `/` | Scenario probabilities, latest events, sector exposure |
-| News Intelligence | `/news` | Article feed with topic filters, search, detail modal |
-| Political Scenarios | `/scenarios` | 4 French political scenarios with policy detail |
-| CAC 40 Universe | `/companies` | 40 companies, sector filter, exposure breakdown |
-| Portfolio | `/portfolio` | Holdings, weights, CSV import |
-| Stress Testing | `/stress-test` | Shock inputs, P&L results, Monte Carlo |
-| ECB Module | `/ecb` | Lagarde succession scenarios with market impact |
-| Methodology | `/methodology` | Information taxonomy, data sources, model audit |
+| Source | Used for | Sent out |
+|---|---|---|
+| Wikipedia (fr) poll list | Presidential simulation | Nothing (page download only) |
+| Yahoo Finance (yfinance) | Prices, historical episodes, stress gauge | Ticker symbols |
+| ECB Data Portal | French and German 10y yields | Series identifiers |
+| RSS feeds | News | Nothing |
+| Groq (optional) | Article summaries and signals | Article title and snippet only |
+| Reddit, Google Trends | Minor sentiment signals | Search keywords |
 
----
-
-## Political Scenarios
-
-| Scenario | Probability | Description |
-|----------|-------------|-------------|
-| Centrist Coalition | 35% | Reform continuation, fiscal consolidation |
-| NR-led Government | 25% | Nationalist policies, EU tensions |
-| Left-wing Coalition (NFP) | 25% | Wealth taxes, wage increases |
-| Hung Parliament | 15% | Legislative paralysis |
-
-> These are illustrative analyst inputs — not predictions or investment recommendations.
-
----
-
-## Data Sources
-
-Configured RSS feeds in `data/rss_sources.yaml`:
-
-- **Official:** Élysée, Gouvernement.fr, Assemblée Nationale, Sénat, Ministère de l'Économie
-- **Institutional:** Banque de France, INSEE, ECB, Eurostat, AMF, European Commission
-- **Press:** Le Monde, Les Echos, Le Figaro, Reuters, Financial Times, Euronews
-
-Feeds are fetched on demand via the "Refresh Feeds" button — no background scheduler in MVP.
-
----
-
-## MCP Server (optional)
-
-Expose the backend as a local MCP server for Claude Code integration:
-
-```bash
-# Add to your Claude Code MCP config (~/.claude/settings.json):
-{
-  "mcpServers": {
-    "france-intel": {
-      "command": "python3",
-      "args": ["/path/to/france-political-intelligence/mcp_server.py"]
-    }
-  }
-}
-```
-
-12 read-only tools: `get_latest_news`, `get_political_scenarios`, `run_stress_test`, etc.  
-Requires backend running at `http://localhost:8000`.
-
----
-
-## Deleting Local Data
-
-```bash
-# Reset demo data (keeps tables, re-seeds):
-curl -X POST http://localhost:8000/api/admin/reset-demo
-
-# Delete the entire database:
-rm data/france_intel.db
-# It will be re-created with demo data on next backend start.
-
-# Remove imported portfolio CSV files:
-rm data/portfolio_imports/*.csv  # if any exist
-```
+Portfolio holdings are never sent to any external service.
 
 ---
 
 ## Architecture
 
-See [`docs/MVP_ARCHITECTURE_AND_NEXT_STEPS.md`](docs/MVP_ARCHITECTURE_AND_NEXT_STEPS.md) for:
-- Full system architecture with Mermaid diagrams
-- Data flow for RSS ingestion and stress testing
-- Entity-relationship diagram
-- Security architecture
-- Production roadmap
-
----
+FastAPI + SQLAlchemy/SQLite backend, Next.js 14 frontend, in-process daily job scheduler.
+Full architecture, known issues and roadmap: [`docs/ENGINEERING_HANDOFF.md`](docs/ENGINEERING_HANDOFF.md).
 
 ## Limitations
 
-- **No live market data** — all prices and exposures are synthetic
-- **No authentication** — localhost only, no user accounts
-- **RSS scheduling is manual** — click "Refresh Feeds" to ingest
-- **AI analysis is off by default** — set `AI_PROVIDER` to enable
-- **Scenario probabilities are user-set** — not market-calibrated
-
----
+- Poll-based, not a calibrated forecast: polling error is an explicit assumption, and candidacy uncertainty only enters through which line-ups pollsters test.
+- Historical analogs assume markets react as they did in 2017–2025. Episode choice and scaling are analyst judgements, shown in the app.
+- Index weights and revenue geography are approximate (2023–24 data).
+- Local, single-user MVP: no authentication, SQLite.
 
 ## Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | FastAPI + Python 3.10+ |
-| Database | SQLAlchemy + SQLite (PostgreSQL-ready) |
-| Frontend | Next.js 14 + React 18 + TypeScript |
-| Styling | Tailwind CSS (dark theme) |
-| Charts | Recharts |
-| Icons | lucide-react |
-| Testing | pytest (46 tests) |
+FastAPI · SQLAlchemy · SQLite · pandas/numpy · yfinance · BeautifulSoup · Groq · Next.js 14 · React 18 · TypeScript · Tailwind · Recharts

@@ -1,3 +1,5 @@
+> **Superseded (Nov 2026):** see [`docs/ENGINEERING_HANDOFF.md`](docs/ENGINEERING_HANDOFF.md) for the current architecture. Parts of this document are out of date.
+
 # France Political Intelligence & CAC40 Portfolio Scenario Simulator
 ## Architecture & Methodology Reference
 
