@@ -1,28 +1,38 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Scenario, Cac40Matrix, Cac40MatrixRow, SentimentSignals } from '@/lib/types'
+import type { Scenario, Cac40Matrix, Cac40MatrixRow, EpisodeMeta, ImpactMethod, SentimentSignals } from '@/lib/types'
+import { HistoryTab } from '@/components/scenarios/HistoryTab'
+import { ReplayTab } from '@/components/scenarios/ReplayTab'
 import { Header } from '@/components/layout/Header'
 
 // --- Scenario imagery (Wikimedia Commons, CC-licensed) ---
-const SCENARIO_IMAGES: Record<string, { url: string; caption: string }> = {
+const SCENARIO_IMAGES: Record<string, { url: string; caption: string; credit: string; source: string }> = {
   centrist: {
-    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f2/%C3%89lys%C3%A9e_Palace_%28south_facade%29.jpg/640px-%C3%89lys%C3%A9e_Palace_%28south_facade%29.jpg',
-    caption: 'Palais de l\'Élysée — seat of the French presidency',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/Palais_de_l%27%C3%89lys%C3%A9e_2019.jpg/960px-Palais_de_l%27%C3%89lys%C3%A9e_2019.jpg',
+    caption: 'Palais de l\'Élysée — continuity at the presidency',
+    credit: 'Leynadmar · CC BY-SA 4.0',
+    source: 'https://commons.wikimedia.org/wiki/File:Palais_de_l%27%C3%89lys%C3%A9e_2019.jpg',
   },
   national_rally: {
-    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Flag_of_France.svg/640px-Flag_of_France.svg.png',
-    caption: 'France under a right-nationalist majority',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/2024-07-04_19-12-15_MeetingRN-Belfort.jpg/960px-2024-07-04_19-12-15_MeetingRN-Belfort.jpg',
+    caption: 'Rassemblement National rally, Belfort, July 2024',
+    credit: 'ComputerHotline · CC BY 4.0',
+    source: 'https://commons.wikimedia.org/wiki/File:2024-07-04_19-12-15_MeetingRN-Belfort.jpg',
   },
   left_wing: {
-    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Place_de_la_Bastille_1.jpg/640px-Place_de_la_Bastille_1.jpg',
-    caption: 'Place de la Bastille — symbol of French republican tradition',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Place_de_la_Bastille%2C_avril_2021.jpg/960px-Place_de_la_Bastille%2C_avril_2021.jpg',
+    caption: 'Place de la Bastille — traditional gathering point of the French left',
+    credit: 'Mododie · CC BY-SA 4.0',
+    source: 'https://commons.wikimedia.org/wiki/File:Place_de_la_Bastille,_avril_2021.jpg',
   },
   hung_parliament: {
-    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Assemblee_Nationale_1.jpg/640px-Assemblee_Nationale_1.jpg',
-    caption: 'Palais Bourbon — seat of the French National Assembly',
+    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3c/Hemicycle_assemblee_nationale.JPG/960px-Hemicycle_assemblee_nationale.JPG',
+    caption: 'Hémicycle of the Assemblée nationale — no working majority',
+    credit: 'Coucouoeuf · CC BY-SA 3.0',
+    source: 'https://commons.wikimedia.org/wiki/File:Hemicycle_assemblee_nationale.JPG',
   },
 }
 
@@ -33,6 +43,10 @@ function Spinner() {
       style={{ width: 14, height: 14, borderRadius: '50%', border: '1px solid #262626', borderTopColor: '#929292' }}
     />
   )
+}
+
+function signed(v: number | null | undefined, digits = 1): string {
+  return v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(digits)}%`
 }
 
 // --- Colour helpers ---
@@ -118,6 +132,7 @@ function ScenarioRow({ s, index }: { s: Scenario; index: number }) {
                   alt={img.caption}
                   style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'grayscale(30%) brightness(0.75)' }}
                   loading="lazy"
+                  referrerPolicy="no-referrer"
                 />
                 <div
                   style={{
@@ -130,9 +145,15 @@ function ScenarioRow({ s, index }: { s: Scenario; index: number }) {
                     fontFamily: 'monospace',
                     fontSize: 10,
                     color: '#929292',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 12,
                   }}
                 >
-                  {img.caption}
+                  <span>{img.caption}</span>
+                  <a href={img.source} target="_blank" rel="noopener noreferrer" style={{ color: '#606060' }}>
+                    {img.credit}
+                  </a>
                 </div>
               </div>
             </div>
@@ -180,12 +201,13 @@ function ScenarioRow({ s, index }: { s: Scenario; index: number }) {
 }
 
 // ─── Company detail panel ─────────────────────────────────────────────────────
-function CompanyDetail({ company, scenarios, onClose }: {
+function CompanyDetail({ company, scenarios, episodes, method, onClose }: {
   company: Cac40MatrixRow
   scenarios: Cac40Matrix['scenarios']
+  episodes: EpisodeMeta[]
+  method: ImpactMethod
   onClose: () => void
 }) {
-  const slugs = scenarios.map((s) => s.slug)
   const sortedScenarios = [...scenarios].sort((a, b) =>
     (company.impacts[b.slug] ?? 0) - (company.impacts[a.slug] ?? 0)
   )
@@ -256,7 +278,9 @@ function CompanyDetail({ company, scenarios, onClose }: {
 
       {/* Scenario impact breakdown */}
       <div className="mb-4">
-        <div className="font-mono text-[9px] tracking-widest uppercase mb-2" style={{ color: '#3a3a3a' }}>SCENARIO IMPACTS</div>
+        <div className="font-mono text-[9px] tracking-widest uppercase mb-2" style={{ color: '#3a3a3a' }}>
+          SCENARIO IMPACTS · {method === 'historical' ? 'HISTORICAL ANALOG' : 'FACTOR MODEL'}
+        </div>
         {sortedScenarios.map((sc) => {
           const v = company.impacts[sc.slug] ?? 0
           const barW = Math.min(Math.abs(v) / 20, 1) * 100
@@ -272,7 +296,8 @@ function CompanyDetail({ company, scenarios, onClose }: {
                 <div style={{ width: `${barW}%`, height: '100%', background: v >= 0 ? '#34C759' : '#FF3B30', opacity: 0.8 }} />
               </div>
               <div className="font-mono text-[9px] mt-0.5" style={{ color: '#3a3a3a' }}>
-                SPR +{sc.macro_shocks.sovereign_spread_bps}bp · EUR {sc.macro_shocks.eur_pct >= 0 ? '+' : ''}{sc.macro_shocks.eur_pct}% · NRG {sc.macro_shocks.energy_pct >= 0 ? '+' : ''}{sc.macro_shocks.energy_pct}%
+                FACTOR <span style={{ color: method === 'factor' ? '#929292' : '#3a3a3a' }}>{signed(company.impacts_factor?.[sc.slug])}</span>
+                {' · '}HISTORICAL <span style={{ color: method === 'historical' ? '#929292' : '#3a3a3a' }}>{signed(company.impacts_historical?.[sc.slug])}</span>
               </div>
             </div>
           )
@@ -289,15 +314,37 @@ function CompanyDetail({ company, scenarios, onClose }: {
           Weighted by current scenario probabilities. Not a forecast.
         </div>
       </div>
+
+      {episodes.length > 0 && (
+        <div className="mt-4">
+          <div className="font-mono text-[9px] tracking-widest uppercase mb-2" style={{ color: '#3a3a3a' }}>
+            REAL EPISODES — ACTUAL MOVE (DAX-ADJUSTED)
+          </div>
+          {episodes.map((e) => {
+            const r = company.episode_returns?.[e.id]
+            return (
+              <div key={e.id} className="flex justify-between gap-3 py-1.5" style={{ borderBottom: '1px solid #1a1a1a' }}>
+                <div className="min-w-0">
+                  <div className="text-[11px]" style={{ color: '#929292' }}>{e.label}</div>
+                  <div className="font-mono text-[9px]" style={{ color: '#3a3a3a' }}>{e.trading_start} → {e.trading_end}</div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="font-mono text-[11px]" style={{ color: r ? impactColor(r.raw_pct) : '#3a3a3a' }}>{r ? signed(r.raw_pct) : '—'}</div>
+                  <div className="font-mono text-[9px]" style={{ color: '#606060' }}>{r ? `adj ${signed(r.abnormal_pct)}` : 'not listed'}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── Weighted treemap heatmap ─────────────────────────────────────────────────
-function WeightMap({ matrix, selectedSlug }: { matrix: Cac40Matrix; selectedSlug: string }) {
+function WeightMap({ matrix, selectedSlug, method }: { matrix: Cac40Matrix; selectedSlug: string; method: ImpactMethod }) {
   const [selected, setSelected] = useState<Cac40MatrixRow | null>(null)
 
-  const slugs = matrix.scenarios.map((s) => s.slug)
   const companies = [...matrix.companies].sort((a, b) => (b.cac_weight ?? 0) - (a.cac_weight ?? 0))
   const totalWeight = companies.reduce((s, c) => s + (c.cac_weight ?? 1), 0)
 
@@ -312,6 +359,8 @@ function WeightMap({ matrix, selectedSlug }: { matrix: Cac40Matrix; selectedSlug
         <CompanyDetail
           company={selected}
           scenarios={matrix.scenarios}
+          episodes={matrix.episodes}
+          method={method}
           onClose={() => setSelected(null)}
         />
       )}
@@ -405,8 +454,9 @@ function WeightMap({ matrix, selectedSlug }: { matrix: Cac40Matrix; selectedSlug
 }
 
 // ─── Tabular heatmap grid ─────────────────────────────────────────────────────
-function HeatmapGrid({ matrix, onSelectCompany }: {
+function HeatmapGrid({ matrix, method, onSelectCompany }: {
   matrix: Cac40Matrix
+  method: ImpactMethod
   onSelectCompany: (c: Cac40MatrixRow) => void
 }) {
   const [filterSector, setFilterSector] = useState('')
@@ -444,7 +494,9 @@ function HeatmapGrid({ matrix, onSelectCompany }: {
   return (
     <div>
       <div className="mb-4 font-mono text-[11px] px-3 py-2" style={{ color: '#606060', border: '1px solid #1a1a1a' }}>
-        COMPANY IMPACTS USE REVENUE GEOGRAPHY SCALING — SAME-SECTOR COMPANIES NOW HAVE UNIQUE SENSITIVITIES. CALIBRATED AGAINST 2011 EUROZONE CRISIS &amp; 2022-23 ECB CYCLE.
+        {method === 'historical'
+          ? 'HISTORICAL ANALOG — EACH STOCK’S ACTUAL MOVE VS THE DAX IN REAL FRENCH POLITICAL EPISODES, AVERAGED PER SCENARIO AND SCALED AS SHOWN IN EACH COLUMN.'
+          : 'FACTOR MODEL — SECTOR SENSITIVITIES × ILLUSTRATIVE MACRO SHOCKS, SCALED BY EACH COMPANY’S REVENUE GEOGRAPHY.'}
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4 items-center">
@@ -488,10 +540,20 @@ function HeatmapGrid({ matrix, onSelectCompany }: {
                 </span>
               )}
             </div>
-            <div className="font-mono text-[9px] mt-1" style={{ color: '#3a3a3a' }}>
-              <div>SPR <span style={{ color: '#606060' }}>+{s.macro_shocks.sovereign_spread_bps}bp</span></div>
-              <div>EUR <span style={{ color: s.macro_shocks.eur_pct >= 0 ? '#34C759' : '#FF9500' }}>{s.macro_shocks.eur_pct >= 0 ? '+' : ''}{s.macro_shocks.eur_pct}%</span></div>
-              <div>NRG <span style={{ color: s.macro_shocks.energy_pct >= 0 ? '#34C759' : '#FF9500' }}>{s.macro_shocks.energy_pct >= 0 ? '+' : ''}{s.macro_shocks.energy_pct}%</span></div>
+            {method === 'historical' && matrix.analogs[s.slug] ? (
+              <div className="font-mono text-[9px] mt-1" style={{ color: '#3a3a3a' }} title={matrix.analogs[s.slug].rationale}>
+                {Object.values(matrix.analogs[s.slug].episode_labels).map((l) => <div key={l}>{l}</div>)}
+                <div style={{ color: '#606060' }}>×{matrix.analogs[s.slug].scale} · {matrix.analogs[s.slug].confidence} confidence</div>
+              </div>
+            ) : (
+              <div className="font-mono text-[9px] mt-1" style={{ color: '#3a3a3a' }}>
+                <div>SPR <span style={{ color: '#606060' }}>+{s.macro_shocks.sovereign_spread_bps}bp</span></div>
+                <div>EUR <span style={{ color: s.macro_shocks.eur_pct >= 0 ? '#34C759' : '#FF9500' }}>{s.macro_shocks.eur_pct >= 0 ? '+' : ''}{s.macro_shocks.eur_pct}%</span></div>
+                <div>NRG <span style={{ color: s.macro_shocks.energy_pct >= 0 ? '#34C759' : '#FF9500' }}>{s.macro_shocks.energy_pct >= 0 ? '+' : ''}{s.macro_shocks.energy_pct}%</span></div>
+              </div>
+            )}
+            <div className="font-mono text-[9px] mt-1" style={{ color: '#606060' }}>
+              CAC40 <span style={{ color: impactColor(matrix.index_impact[method]?.[s.slug] ?? 0) }}>{signed(matrix.index_impact[method]?.[s.slug])}</span>
             </div>
           </div>
         ))}
@@ -599,8 +661,8 @@ function SentimentTab() {
   }
 
   const SOURCE_LABELS: Record<string, string> = {
-    wiki_polls: 'Wikipedia Polls',
-    news: 'RSS News (VADER)',
+    polls: 'Presidential poll simulation',
+    news: 'News (Groq extraction / keywords)',
     reddit: 'Reddit',
     trends: 'Google Trends',
   }
@@ -658,6 +720,7 @@ function SentimentTab() {
               <span className="font-mono text-[10px] tracking-wide uppercase" style={{ color: '#929292' }}>
                 {SOURCE_LABELS[key] ?? key}
               </span>
+              <span className="font-mono text-[9px]" style={{ color: '#606060' }}>WEIGHT {Math.round((src.weight ?? 0) * 100)}%</span>
               <span
                 className="font-mono text-[9px] px-1.5 py-0.5"
                 style={{
@@ -708,13 +771,36 @@ export default function ScenariosPage() {
   const [error, setError] = useState<string | null>(null)
   const [matrix, setMatrix] = useState<Cac40Matrix | null>(null)
   const [matrixLoading, setMatrixLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'scenarios' | 'heatmap' | 'sentiment'>('scenarios')
+  const [activeTab, setActiveTab] = useState<'scenarios' | 'heatmap' | 'replay' | 'history' | 'sentiment'>('scenarios')
+  const [method, setMethod] = useState<ImpactMethod>('factor')
   const [heatmapView, setHeatmapView] = useState<'grid' | 'weightmap'>('grid')
   const [weightSlug, setWeightSlug] = useState('all')
-  const [selectedCompany, setSelectedCompany] = useState<Cac40MatrixRow | null>(null)
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
 
   const handleSelectCompany = useCallback((c: Cac40MatrixRow) => {
-    setSelectedCompany((prev) => prev?.ticker === c.ticker ? null : c)
+    setSelectedTicker((prev) => (prev === c.ticker ? null : c.ticker))
+  }, [])
+
+  const viewMatrix = useMemo<Cac40Matrix | null>(() => {
+    if (!matrix) return null
+    return {
+      ...matrix,
+      companies: matrix.companies.map((c) => ({
+        ...c,
+        impacts_factor: c.impacts,
+        impacts: method === 'historical' ? c.impacts_historical : c.impacts,
+        expected_impact_pct: method === 'historical' ? (c.expected_impact_historical_pct ?? 0) : c.expected_impact_pct,
+      })),
+    }
+  }, [matrix, method])
+  const selectedCompany = viewMatrix?.companies.find((c) => c.ticker === selectedTicker) ?? null
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get('tab')
+    if (tab === 'scenarios' || tab === 'heatmap' || tab === 'replay' || tab === 'history' || tab === 'sentiment') setActiveTab(tab)
+    const m = params.get('method')
+    if (m === 'factor' || m === 'historical') setMethod(m)
   }, [])
 
   useEffect(() => {
@@ -736,11 +822,13 @@ export default function ScenariosPage() {
       <Header title="Political Scenarios" showDemoLabel />
 
       {/* Company drill-down panel */}
-      {selectedCompany && matrix && (
+      {selectedCompany && viewMatrix && (
         <CompanyDetail
           company={selectedCompany}
-          scenarios={matrix.scenarios}
-          onClose={() => setSelectedCompany(null)}
+          scenarios={viewMatrix.scenarios}
+          episodes={viewMatrix.episodes}
+          method={method}
+          onClose={() => setSelectedTicker(null)}
         />
       )}
 
@@ -756,7 +844,9 @@ export default function ScenariosPage() {
           {([
             ['scenarios', 'SCENARIOS'],
             ['heatmap', 'IMPACT HEATMAP'],
-            ['sentiment', 'SENTIMENT'],
+            ['replay', 'REPLAY PAST SHOCKS'],
+            ['history', 'PROBABILITY HISTORY'],
+            ['sentiment', 'SIGNALS'],
           ] as const).map(([tab, label]) => (
             <button
               key={tab}
@@ -778,7 +868,7 @@ export default function ScenariosPage() {
         {activeTab === 'scenarios' && (
           <>
             <div className="mb-4 font-mono text-[11px] px-3 py-2" style={{ color: '#606060', border: '1px solid #1a1a1a' }}>
-              ANALYTICAL FRAMEWORKS — NOT PREDICTIONS. PROBABILITIES ARE ILLUSTRATIVE ANALYST INPUTS.
+              ANALYTICAL FRAMEWORKS — NOT PREDICTIONS. PROBABILITIES BLEND A FIXED ANALYST PRIOR WITH THE PRESIDENTIAL POLL SIMULATION AND NEWS SIGNALS (SEE SIGNALS TAB).
             </div>
 
             {Math.abs(probSum - 1) > 0.01 && scenarios.length > 0 && (
@@ -818,10 +908,29 @@ export default function ScenariosPage() {
               <Spinner />
               <span className="font-mono text-[11px] tracking-widest uppercase">LOADING HEATMAP</span>
             </div>
-          ) : matrix ? (
+          ) : viewMatrix ? (
             <div>
               {/* Heatmap sub-nav */}
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <div className="flex mr-2">
+                  {(['factor', 'historical'] as ImpactMethod[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMethod(m)}
+                      disabled={m === 'historical' && !viewMatrix.historical_available}
+                      className="font-mono text-[10px] tracking-widest uppercase px-3 py-1.5"
+                      style={{
+                        background: method === m ? '#F5F5F5' : 'transparent',
+                        color: method === m ? '#090909' : '#606060',
+                        border: '1px solid #262626',
+                        cursor: 'pointer',
+                      }}
+                      title={m === 'historical' && !viewMatrix.historical_available ? 'Historical data not computed yet' : undefined}
+                    >
+                      {m === 'factor' ? 'FACTOR MODEL' : 'HISTORICAL ANALOG'}
+                    </button>
+                  ))}
+                </div>
                 {(['grid', 'weightmap'] as const).map((v) => (
                   <button
                     key={v}
@@ -847,7 +956,7 @@ export default function ScenariosPage() {
                     style={{ background: '#101010', border: '1px solid #262626', borderRadius: 2, color: '#929292', appearance: 'none' }}
                   >
                     <option value="all">EXPECTED (PROB-WEIGHTED)</option>
-                    {matrix.scenarios.map((s) => (
+                    {viewMatrix.scenarios.map((s) => (
                       <option key={s.slug} value={s.slug}>{s.display_name.toUpperCase()}</option>
                     ))}
                   </select>
@@ -855,9 +964,9 @@ export default function ScenariosPage() {
               </div>
 
               {heatmapView === 'grid' ? (
-                <HeatmapGrid matrix={matrix} onSelectCompany={handleSelectCompany} />
+                <HeatmapGrid matrix={viewMatrix} method={method} onSelectCompany={handleSelectCompany} />
               ) : (
-                <WeightMap matrix={matrix} selectedSlug={weightSlug} />
+                <WeightMap matrix={viewMatrix} selectedSlug={weightSlug} method={method} />
               )}
             </div>
           ) : (
@@ -866,6 +975,10 @@ export default function ScenariosPage() {
         )}
 
         {/* ── Sentiment tab ── */}
+        {activeTab === 'replay' && <ReplayTab />}
+
+        {activeTab === 'history' && <HistoryTab />}
+
         {activeTab === 'sentiment' && <SentimentTab />}
       </div>
     </div>

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from database import get_db
+from services.groq_extractor import _MODEL as GROQ_MODEL
 from models import Article, Event, PoliticalScenario, StressTest, PriceCache, DataFetchLog
 
 router = APIRouter()
@@ -27,7 +28,7 @@ def get_methodology(db: Session = Depends(get_db)):
         "data_cutoff": "2024-11-08",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "ai_provider": "groq" if os.environ.get("GROQ_API_KEY") else "none",
-        "model": "llama-3.1-8b-instant (Groq)" if os.environ.get("GROQ_API_KEY") else "keyword_extractor_v0.1",
+        "model": f"{GROQ_MODEL} (Groq)" if os.environ.get("GROQ_API_KEY") else "keyword_extractor_v0.1",
         "data_summary": {
             "total_articles": article_count,
             "synthetic_articles": synthetic_count,
@@ -56,7 +57,8 @@ def get_methodology(db: Session = Depends(get_db)):
             "6. Unverified claims (remain unconfirmed)",
         ],
         "scenario_methodology": {
-            "probabilities": "Illustrative analyst inputs. NOT statistical forecasts. NOT model outputs.",
+            "probabilities": "Blend of a fixed analyst prior (40%), a presidential poll simulation (35%), news extraction (15%), Reddit (5%) and Google Trends (5%). The prior is never overwritten.",
+            "presidential": "Monte Carlo over Wikipedia-listed first-round poll hypotheses and head-to-head polls, with polling error widening with time to the vote.",
             "validation": "Probabilities must sum to 1.0 — validated in code",
             "source_policy": "Party platform positions require attributable, dated sources",
             "disclaimer": "Scenarios are hypothetical frameworks. Not election predictions.",
@@ -72,16 +74,18 @@ def get_methodology(db: Session = Depends(get_db)):
         },
         "model_warnings": [
             "ECB successor profiles are hypothetical constructs, not predictions",
-            "Scenario probabilities blend analyst prior with live sentiment signals — not statistical election forecasts",
+            "Scenario probabilities blend a fixed analyst prior with poll and news signals — not a calibrated election forecast",
+            "Historical analogs assume markets react to future events as they did to past ones; episode mapping and scaling are analyst choices",
             "Monte Carlo covariance estimated from 1-year yfinance history — may not reflect current market regimes",
         ],
         "limitations": [
             f"Market prices fetched daily via Yahoo Finance — {live_prices_count} tickers cached today" if live_prices_count > 0 else "Market prices not yet fetched today — restart backend to trigger",
-            "Scenario probabilities auto-updated from blended signals (Wikipedia polls + news VADER + Reddit + Google Trends)",
-            f"AI news extraction: {'active via Groq llama-3.1-8b-instant' if os.environ.get('GROQ_API_KEY') else 'set GROQ_API_KEY in backend/.env to enable'}",
+            "Scenario probabilities: fixed prior + presidential poll simulation + news extraction + Reddit + Google Trends, refreshed daily",
+            "OAT–Bund spread is monthly (ECB); no free daily French yield source is used",
+            f"AI news extraction: {'active via Groq ' + GROQ_MODEL if os.environ.get('GROQ_API_KEY') else 'set GROQ_API_KEY in backend/.env to enable'}",
             "No options/derivatives pricing — equity positions only",
             "No multi-user authentication — local use only",
-            "No production-grade background job queue",
+            "Background jobs run in-process (6-hourly check, daily refresh) — no external job queue",
         ],
     }
 

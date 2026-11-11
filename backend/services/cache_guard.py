@@ -12,12 +12,12 @@ from models import DataFetchLog
 
 
 def should_fetch(db: Session, fetch_type: str) -> bool:
-    """Return True if no successful fetch of this type has been recorded today."""
+    """Return True if no completed fetch ("ok", or "partial" = ran but found nothing) is recorded today."""
     today = date.today().isoformat()
     existing = db.query(DataFetchLog).filter(
         DataFetchLog.fetch_type == fetch_type,
         DataFetchLog.fetched_date == today,
-        DataFetchLog.status == "ok",
+        DataFetchLog.status.in_(("ok", "partial")),
     ).first()
     return existing is None
 

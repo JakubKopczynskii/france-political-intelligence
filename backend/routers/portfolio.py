@@ -204,3 +204,95 @@ def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
     db.delete(p)
     db.commit()
     return {"deleted": True, "portfolio_id": portfolio_id}
+
+
+@router.get("/api/portfolio/{portfolio_id}/election-exposure")
+def election_exposure(portfolio_id: int, db: Session = Depends(get_db)):
+    """
+    Portfolio P&L under each political scenario, using both impact methods.
+    CAC40 holdings use their own company impacts; other equities use a sector proxy; cash is unaffected.
+    Holdings never leave the machine. Not investment advice.
+    """
+    from routers.analysis import build_matrix, SCENARIO_MACRO_SHOCKS, _company_impact_pct
+    from services.presidential import BLOC_TO_SCENARIO
+    from services.store import get_cache
+
+    p = db.get(Portfolio, portfolio_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    holdings = db.query(Holding).filter(Holding.portfolio_id == portfolio_id).all()
+    total_value = sum(h.market_value for h in holdings)
+    matrix = build_matrix(db)
+    rows = {r["ticker"]: r for r in matrix["companies"]}
+    slugs = [s["slug"] for s in matrix["scenarios"]]
+    probs = {s["slug"]: s["probability"] for s in matrix["scenarios"]}
+    methods = ["factor", "historical"] if matrix["historical_available"] else ["factor"]
+
+    sector_hist: dict[str, dict[str, float]] = {}
+    for r in matrix["companies"]:
+        for slug, v in r["impacts_historical"].items():
+            sector_hist.setdefault(r["sector"], {}).setdefault(slug, []).append(v)
+    sector_hist = {sec: {slug: sum(v) / len(v) for slug, v in d.items()} for sec, d in sector_hist.items()}
+
+    out_holdings = []
+    totals = {m: {s: 0.0 for s in slugs} for m in methods}
+    for h in holdings:
+        is_cash = h.asset_type == "cash" or h.symbol.upper() == "CASH"
+        row = rows.get(h.symbol)
+        if is_cash:
+            impacts = {m: {s: 0.0 for s in slugs} for m in methods}
+            basis = "cash"
+        elif row:
+            impacts = {"factor": row["impacts"], "historical": row["impacts_historical"]}
+            basis = "company"
+        else:
+            impacts = {
+                "factor": {s: _company_impact_pct(h.sector or "Unknown", SCENARIO_MACRO_SHOCKS[s]) for s in slugs},
+                "historical": sector_hist.get(h.sector or "", matrix["index_impact"]["historical"]),
+            }
+            basis = "sector proxy" if h.sector in sector_hist else "index proxy"
+        weight = h.market_value / total_value if total_value else 0.0
+        contrib = {m: {s: round(weight * impacts[m].get(s, 0.0), 3) for s in slugs} for m in methods}
+        for m in methods:
+            for s in slugs:
+                totals[m][s] += contrib[m][s]
+        out_holdings.append({
+            "symbol": h.symbol, "name": h.company_name, "sector": h.sector, "weight": round(weight, 4),
+            "basis": basis,
+            "impacts": {m: {s: impacts[m].get(s) for s in slugs} for m in methods},
+            "contribution_pct": contrib,
+        })
+
+    pres = get_cache(db, "presidential") or {}
+    blocs = pres.get("blocs", {})
+    bloc_total = sum(blocs.get(b, 0.0) for b in BLOC_TO_SCENARIO) or 1.0
+
+    summary = {}
+    for m in methods:
+        t = {s: round(v, 2) for s, v in totals[m].items()}
+        worst = min(t, key=t.get)
+        summary[m] = {
+            "scenario_pct": t,
+            "scenario_eur": {s: round(total_value * v / 100, 0) for s, v in t.items()},
+            "expected_pct": round(sum(probs[s] * t[s] for s in slugs), 2),
+            "presidential_expected_pct": (
+                round(sum(blocs.get(b, 0.0) * t[slug] for b, slug in BLOC_TO_SCENARIO.items()) / bloc_total, 2) if blocs else None
+            ),
+            "worst_scenario": worst,
+            "top_detractors": sorted(
+                ({"symbol": h["symbol"], "name": h["name"], "contribution_pct": h["contribution_pct"][m][worst]} for h in out_holdings),
+                key=lambda x: x["contribution_pct"],
+            )[:5],
+        }
+
+    return {
+        "portfolio_id": p.id,
+        "portfolio_name": p.name,
+        "total_value": total_value,
+        "scenarios": matrix["scenarios"],
+        "methods": methods,
+        "summary": summary,
+        "holdings": out_holdings,
+        "presidential_blocs": blocs,
+        "disclaimer": "Scenario P&L estimates from illustrative models and past market reactions. Not investment advice.",
+    }

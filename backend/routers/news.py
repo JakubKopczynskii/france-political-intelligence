@@ -24,9 +24,15 @@ def _importance_label(score: float | None) -> str:
     return "LOW"
 
 
-def _serialize_article(a: Article, source_name: str = "Unknown") -> dict:
+def _serialize_article(a: Article, source_name: str = "Unknown", ai: dict | None = None) -> dict:
     score = a.relevance_score or 0.0
     return {
+        "ai": {
+            "summary": ai.get("summary_one_line"),
+            "market_relevance": ai.get("market_relevance"),
+            "sentiment": ai.get("sentiment"),
+            "scenario_signals": ai.get("political_scenario_signals"),
+        } if isinstance(ai, dict) else None,
         "id": a.id,
         "title": a.title,
         "url": a.url,
@@ -94,6 +100,9 @@ def list_articles(
     feeds = {f.id: f for f in db.query(Feed).filter(Feed.id.in_(feed_ids)).all()} if feed_ids else {}
     source_ids = list({f.source_id for f in feeds.values() if f.source_id})
     sources = {s.id: s for s in db.query(Source).filter(Source.id.in_(source_ids)).all()} if source_ids else {}
+    from services.groq_extractor import load_extractions
+    ai = load_extractions(db, [a.id for a in articles])
+
     def _source_name(a: Article) -> str:
         feed = feeds.get(a.feed_id)
         if not feed:
@@ -104,7 +113,7 @@ def list_articles(
         "total": total,
         "offset": offset,
         "limit": limit,
-        "articles": [_serialize_article(a, source_name=_source_name(a)) for a in articles],
+        "articles": [_serialize_article(a, source_name=_source_name(a), ai=ai.get(a.id)) for a in articles],
     }
 
 

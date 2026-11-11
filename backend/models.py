@@ -115,6 +115,7 @@ class PoliticalScenario(Base):
     invalidating_assumptions = Column(Text, default="[]")  # JSON list
     probability = Column(Float, default=0.25)
     probability_label = Column(String(255), default="illustrative analyst input")
+    prior_probability = Column(Float, nullable=True)  # fixed analyst prior; never overwritten by signal blending
     last_updated = Column(DateTime, default=_now)
     created_at = Column(DateTime, default=_now)
 
@@ -344,3 +345,24 @@ class ProbabilityRevision(Base):
     revised_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     scenario = relationship("PoliticalScenario", back_populates="probability_revisions")
+
+
+class DataCache(Base):
+    """JSON results of expensive fetch/compute jobs (polls, historical episodes, market risk)."""
+    __tablename__ = "data_cache"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(100), nullable=False, unique=True, index=True)
+    payload = Column(Text, nullable=False)
+    fetched_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class ProbabilitySnapshot(Base):
+    """One row per day per kind ("scenarios" | "presidential") for history charts."""
+    __tablename__ = "probability_snapshot"
+
+    id = Column(Integer, primary_key=True)
+    kind = Column(String(30), nullable=False, index=True)
+    snapshot_date = Column(String(10), nullable=False, index=True)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

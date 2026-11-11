@@ -14,6 +14,7 @@ import { Upload, Download, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Portfolio } from '@/lib/types'
 import { Header } from '@/components/layout/Header'
+import { ElectionExposure } from '@/components/portfolio/ElectionExposure'
 
 const CSV_TEMPLATE =
   'symbol,quantity,market_value,currency,asset_type\nAIR.PA,10,1500.00,EUR,equity\nBNP.PA,20,2400.00,EUR,equity\n'
@@ -319,6 +320,8 @@ export default function PortfolioPage() {
                 </tbody>
               </table>
             </div>
+
+            <ElectionExposure portfolioId={portfolio.id} />
           </>
         )}
       </div>

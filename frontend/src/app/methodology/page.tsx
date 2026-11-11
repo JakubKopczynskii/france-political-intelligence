@@ -26,8 +26,11 @@ const EVIDENCE_HIERARCHY = [
 
 const LIMITATIONS = [
   'Market prices fetched daily from Yahoo Finance — live prices shown per company and in heatmap drill-down',
-  'Scenario probabilities auto-updated at startup from blended signals: Wikipedia polls + news VADER + Reddit + Google Trends',
-  'AI news extraction runs automatically via Groq (llama-3.1-8b-instant) — only article text sent, no user data',
+  'Scenario probabilities refreshed daily: fixed analyst prior + presidential poll simulation + news extraction + Reddit + Google Trends',
+  'Presidential model parses Wikipedia poll tables; it inherits any errors or delays in that list',
+  'AI news extraction runs daily via Groq — only article title and snippet are sent, no user or portfolio data',
+  'Historical analogs assume markets react to future events as they did in 2017–2025; episode mapping and scaling are analyst choices',
+  'OAT–Bund spread is a monthly ECB series; daily stress readings come from equity proxies (CAC vs DAX, French vs EU banks)',
   'Revenue geography data sourced from 2023 annual reports — used to give each company unique scenario sensitivities',
   'Sector sensitivities calibrated against 2011 Eurozone crisis and 2022–23 ECB hiking cycle — not a live factor model',
   'Monte Carlo covariance estimated from 1 year of daily returns via Yahoo Finance — updated daily',
@@ -143,7 +146,7 @@ export default function MethodologyPage() {
               {
                 label: 'PROBABILITY PROVENANCE',
                 formula: null,
-                note: 'Blended signal: 45% analyst prior + 15% Wikipedia election polls + 20% RSS news VADER sentiment + 10% Reddit r/france + 10% Google Trends party name search volume. Polymarket prediction markets override all signals when available.',
+                note: 'Blended signal: 40% fixed analyst prior + 35% presidential poll simulation (Wikipedia poll list, two-round Monte Carlo) + 15% news (Groq article extraction, keyword fallback) + 5% Reddit + 5% Google Trends. The prior is never overwritten, so the blend cannot drift on its own output.',
               },
             ].map(({ label, formula, note }) => (
               <div key={label} style={{ borderBottom: '1px solid #1a1a1a', paddingBottom: 12 }}>

@@ -11,11 +11,13 @@ import {
   Zap,
   Landmark,
   Settings,
+  Vote,
 } from 'lucide-react'
 
 const NAV = [
   { href: '/', label: 'Overview', icon: Home },
   { href: '/news', label: 'News Intel', icon: Newspaper },
+  { href: '/election', label: 'Election 2027', icon: Vote },
   { href: '/scenarios', label: 'Scenarios', icon: Flag },
   { href: '/companies', label: 'CAC 40', icon: BarChart2 },
   { href: '/portfolio', label: 'Portfolio', icon: Briefcase },

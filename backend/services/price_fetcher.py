@@ -16,16 +16,10 @@ try:
 except ImportError:
     _YFINANCE_AVAILABLE = False
 
+from cac40 import TICKERS
 from models import PriceCache
 
-CAC40_TICKERS = [
-    "AI.PA", "AIR.PA", "CS.PA", "BNP.PA", "EN.PA", "CAP.PA", "CA.PA",
-    "SGO.PA", "ACA.PA", "DSY.PA", "EL.PA", "EUFI.PA", "RMS.PA", "KER.PA",
-    "OR.PA", "LR.PA", "MC.PA", "ML.PA", "ORA.PA", "RI.PA", "PUB.PA",
-    "RNO.PA", "SAN.PA", "SAF.PA", "STM.PA", "GLE.PA", "STLAP.PA",
-    "TTE.PA", "URW.PA", "VIE.PA", "DG.PA", "WLN.PA", "SU.PA",
-    "SW.PA", "ENGI.PA", "VIV.PA", "FP.PA", "HO.PA", "BN.PA", "EURAZ.PA",
-]
+CAC40_TICKERS = TICKERS
 
 
 def fetch_prices_sync(tickers: list) -> dict:

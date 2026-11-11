@@ -2,6 +2,12 @@ import type {
   Article,
   Cac40Matrix,
   Company,
+  ElectionExposure,
+  ElectionHistory,
+  Episode,
+  CalendarEvent,
+  MarketRisk,
+  Presidential,
   ECBScenario,
   Event,
   HealthResponse,
@@ -90,4 +96,20 @@ export const api = {
   getCac40Matrix: () => req<Cac40Matrix>('/api/analysis/cac40-matrix'),
 
   getSentimentSignals: () => req<SentimentSignals>('/api/analysis/sentiment'),
+
+  getEpisodes: () =>
+    req<{ available: boolean; computed_at?: string; companies?: Record<string, { name: string; sector: string; weight: number }>; episodes: Episode[]; message?: string }>('/api/analysis/episodes'),
+
+  getPresidential: () => req<Presidential>('/api/election/presidential'),
+
+  refreshPresidential: () => req<Presidential>('/api/election/presidential/refresh', { method: 'POST' }),
+
+  getCalendar: () => req<{ events: CalendarEvent[]; source: string; note: string }>('/api/election/calendar'),
+
+  getMarketRisk: () => req<MarketRisk>('/api/election/market-risk'),
+
+  getElectionHistory: () => req<ElectionHistory>('/api/election/history'),
+
+  getElectionExposure: (portfolioId: number) =>
+    req<ElectionExposure>(`/api/portfolio/${portfolioId}/election-exposure`),
 }

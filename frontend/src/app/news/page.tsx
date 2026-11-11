@@ -202,6 +202,12 @@ export default function NewsPage() {
                     <div className="text-[13px] line-clamp-2 mb-1.5" style={{ color: '#F5F5F5', lineHeight: 1.4 }}>
                       {a.title}
                     </div>
+                    {a.ai?.summary && (
+                      <div className="text-[11px] mb-1.5 line-clamp-1" style={{ color: '#929292' }}>
+                        <span className="font-mono text-[9px] mr-1.5" style={{ color: '#606060' }}>AI</span>
+                        {a.ai.summary}
+                      </div>
+                    )}
                     <div className="flex gap-1 flex-wrap items-center">
                       {a.topic_tags?.slice(0, 3).map((tag) => (
                         <span key={tag} className="font-mono text-[9px] tracking-wide uppercase px-1 py-0.5" style={{ color: '#606060', border: '1px solid #1a1a1a' }}>
@@ -271,6 +277,26 @@ export default function NewsPage() {
             <p className="text-[13px] mb-5" style={{ color: '#929292', lineHeight: '1.6' }}>
               {selected.content_snippet}
             </p>
+            {selected.ai && (
+              <div className="mb-5 p-3" style={{ border: '1px solid #1a1a1a' }}>
+                <div className="font-mono text-[9px] tracking-widest mb-2" style={{ color: '#606060' }}>
+                  AI EXTRACTION · MARKET RELEVANCE {(selected.ai.market_relevance ?? '—').toUpperCase()} · VERIFY AGAINST SOURCE
+                </div>
+                {selected.ai.summary && <div className="text-[12px] mb-2" style={{ color: '#F5F5F5' }}>{selected.ai.summary}</div>}
+                {selected.ai.scenario_signals && (
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    {Object.entries(selected.ai.scenario_signals).map(([k, v]) => (
+                      <div key={k} className="flex items-center gap-2 font-mono text-[9px]">
+                        <span className="w-28" style={{ color: '#606060' }}>{k.replace('_', ' ').toUpperCase()}</span>
+                        <div style={{ flex: 1, height: 2, background: '#1a1a1a' }}>
+                          <div style={{ width: `${Math.min(Number(v) || 0, 1) * 100}%`, height: '100%', background: '#929292' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4 font-mono text-[11px]">
               <div>
                 <div className="mb-1" style={{ color: '#606060' }}>SOURCE</div>

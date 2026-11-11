@@ -1,35 +1,32 @@
 """
-Blends multiple sentiment signals into final scenario probabilities.
+Blends signals into probabilities for the four scenario buckets.
 
-Sources and weights:
-  - Analyst prior (seed DB values)         45%
-  - Wikipedia election polls               15%
-  - RSS news sentiment (VADER + keywords)  20%
-  - Reddit signal (r/france, r/politique)   10%
-  - Google Trends                           10%
-  - Polymarket (when available)            overrides all — treated as market consensus
+Weights:
+  - Analyst prior (fixed, PoliticalScenario.prior_probability)          40%
+  - Presidential poll simulation (Wikipedia polls → bloc win odds)      35%
+  - News signal (Groq extractions; keyword fallback)                    15%
+  - Reddit keyword frequency                                             5%
+  - Google Trends search volume                                          5%
 
-If a source returns {} (unavailable/no signal), its weight is redistributed
-proportionally across the remaining sources.
+The prior is never overwritten, so repeated runs cannot compound on their own output.
+Missing sources hand their weight to the prior. Only the daily background job
+persists results (with an audit row and a daily snapshot); API reads are side-effect free.
 
-Calibration rationale:
-  Wikipedia election polls are added as a 15% signal — more authoritative than
-  social media sentiment but kept below the analyst prior which incorporates
-  structural scenario knowledge. Polymarket override reflects the academic finding
-  that prediction markets outperform polls and media sentiment for election forecasting
-  (Wolfers & Zitzewitz, 2004; Tetlock superforecasters).
+The poll simulation covers presidential outcomes only. "Hung parliament" is not a
+presidential outcome, so it keeps its prior share inside the poll signal and the
+three presidential blocs split the remainder.
 """
 from __future__ import annotations
 from sqlalchemy.orm import Session
 from models import PoliticalScenario
 
 _BASE_WEIGHTS = {
-    "wiki_polls": 0.15,
-    "news":       0.20,
-    "reddit":     0.10,
-    "trends":     0.10,
+    "polls":  0.35,
+    "news":   0.15,
+    "reddit": 0.05,
+    "trends": 0.05,
 }
-_PRIOR_WEIGHT = 0.45
+_PRIOR_WEIGHT = 0.40
 
 _SCENARIO_SLUGS = ["centrist", "national_rally", "left_wing", "hung_parliament"]
 
@@ -37,178 +34,110 @@ _SCENARIO_SLUGS = ["centrist", "national_rally", "left_wing", "hung_parliament"]
 def _normalise(d: dict[str, float]) -> dict[str, float]:
     total = sum(d.values())
     if total <= 0:
-        n = len(d)
-        return {k: 1.0 / n for k in d}
+        return {k: 1.0 / len(d) for k in d}
     return {k: v / total for k, v in d.items()}
 
 
 def get_prior_from_db(db: Session) -> dict[str, float]:
-    """Read current scenario probabilities from DB as the analyst prior."""
-    rows = db.query(PoliticalScenario).all()
-    prior = {r.name: float(r.probability) for r in rows if r.name in _SCENARIO_SLUGS}
+    rows = db.query(PoliticalScenario).filter(PoliticalScenario.name.in_(_SCENARIO_SLUGS)).all()
+    prior = {r.name: float(r.prior_probability if r.prior_probability is not None else r.probability) for r in rows}
     for slug in _SCENARIO_SLUGS:
-        if slug not in prior:
-            prior[slug] = 1.0 / len(_SCENARIO_SLUGS)
+        prior.setdefault(slug, 1.0 / len(_SCENARIO_SLUGS))
     return _normalise(prior)
 
 
+def poll_signal_from_presidential(presidential: dict | None, prior: dict[str, float]) -> dict[str, float]:
+    if not presidential or not presidential.get("scenario_signal"):
+        return {}
+    hung = prior.get("hung_parliament", 0.0)
+    sig = presidential["scenario_signal"]
+    out = {slug: (1 - hung) * float(sig.get(slug, 0.0)) for slug in ("centrist", "national_rally", "left_wing")}
+    out["hung_parliament"] = hung
+    return out
+
+
 def write_probabilities_to_db(db: Session, blended: dict[str, float], sources_active: list[str]) -> int:
-    """
-    Write blended probabilities back to PoliticalScenario rows.
-    Logs each change as a ProbabilityRevision. Returns count updated.
-    Only writes if the blended values differ from current by > 0.5%.
-    """
     from models import ProbabilityRevision
     rows = {r.name: r for r in db.query(PoliticalScenario).all() if r.name in _SCENARIO_SLUGS}
-    if not rows:
-        return 0
-
-    label = "blended: " + (", ".join(sources_active) if sources_active else "prior only")
+    label = "blended: prior + " + (", ".join(sources_active) if sources_active else "no live sources")
     updated = 0
     for slug, new_prob in blended.items():
         row = rows.get(slug)
-        if not row:
+        if not row or abs(row.probability - new_prob) < 0.005:
             continue
-        if abs(row.probability - new_prob) < 0.005:
-            continue
-        revision = ProbabilityRevision(
+        db.add(ProbabilityRevision(
             scenario_id=row.id,
             old_probability=row.probability,
             new_probability=new_prob,
             source="blended_signal",
             rationale=label,
-        )
-        db.add(revision)
+        ))
         row.probability = new_prob
         row.probability_label = label
         updated += 1
-
     if updated:
         db.commit()
     return updated
 
 
-def blend_signals(
-    prior: dict[str, float],
-    news: dict[str, float],
-    reddit: dict[str, float],
-    trends: dict[str, float],
-    wiki_polls: dict[str, float] | None = None,
-    polymarket: dict[str, float] | None = None,
-) -> dict[str, float]:
-    # Keep original signature working (overload handles old callers)
-    return _blend(prior, news, reddit, trends, wiki_polls or {}, polymarket)
-
-
-def _blend(
-    prior: dict[str, float],
-    news: dict[str, float],
-    reddit: dict[str, float],
-    trends: dict[str, float],
-    wiki_polls: dict[str, float],
-    polymarket: dict[str, float] | None,
-) -> dict[str, float]:
-    if polymarket and len(polymarket) >= len(_SCENARIO_SLUGS):
-        pm_norm = _normalise({s: polymarket.get(s, 0.0) for s in _SCENARIO_SLUGS})
-        if all(v > 0 for v in pm_norm.values()):
-            return pm_norm
-
-    signals = {"wiki_polls": wiki_polls, "news": news, "reddit": reddit, "trends": trends}
-    available = {k: v for k, v in signals.items() if v}
-
-    missing_weight = sum(_BASE_WEIGHTS[k] for k in _BASE_WEIGHTS if k not in available)
-    effective_prior_weight = _PRIOR_WEIGHT + missing_weight
-
-    blended = {s: 0.0 for s in _SCENARIO_SLUGS}
-    for slug in _SCENARIO_SLUGS:
-        blended[slug] += effective_prior_weight * prior.get(slug, 0.0)
-
+def blend(prior: dict[str, float], signals: dict[str, dict[str, float]]) -> dict[str, float]:
+    available = {k: v for k, v in signals.items() if v and k in _BASE_WEIGHTS}
+    prior_weight = _PRIOR_WEIGHT + sum(w for k, w in _BASE_WEIGHTS.items() if k not in available)
+    blended = {s: prior_weight * prior.get(s, 0.0) for s in _SCENARIO_SLUGS}
     for source, signal in available.items():
-        w = _BASE_WEIGHTS[source]
-        for slug in _SCENARIO_SLUGS:
-            blended[slug] += w * signal.get(slug, 0.0)
-
+        norm = _normalise({s: float(signal.get(s, 0.0)) for s in _SCENARIO_SLUGS})
+        for s in _SCENARIO_SLUGS:
+            blended[s] += _BASE_WEIGHTS[source] * norm[s]
     return _normalise(blended)
 
 
-async def compute_probabilities(db: Session) -> dict:
-    """
-    Run all sentiment sources, blend with DB prior, return full result dict.
-    Never raises — returns prior on any failure.
-    """
+async def compute_probabilities(db: Session, persist: bool = False) -> dict:
+    """Run all sources and blend with the fixed prior. Never raises."""
     from services.sentiment_fetcher import analyze_news
     from services.reddit_fetcher import fetch_reddit_signal
     from services.trends_fetcher import fetch_trends_signal
-    from services.poll_fetcher import fetch_wiki_poll_signal
+    from services.store import get_cache, save_snapshot
 
     prior = get_prior_from_db(db)
-
-    news_signal: dict[str, float] = {}
-    reddit_signal: dict[str, float] = {}
-    trends_signal: dict[str, float] = {}
-    wiki_signal: dict[str, float] = {}
-    sources_ok: list[str] = []
+    signals: dict[str, dict[str, float]] = {"polls": {}, "news": {}, "reddit": {}, "trends": {}}
 
     try:
-        news_signal = analyze_news(db)
-        if news_signal:
-            sources_ok.append("news")
+        signals["polls"] = poll_signal_from_presidential(get_cache(db, "presidential"), prior)
+    except Exception:
+        pass
+    try:
+        signals["news"] = analyze_news(db)
+    except Exception:
+        pass
+    try:
+        signals["reddit"] = await fetch_reddit_signal()
+    except Exception:
+        pass
+    try:
+        signals["trends"] = await fetch_trends_signal()
     except Exception:
         pass
 
-    try:
-        reddit_signal = await fetch_reddit_signal()
-        if reddit_signal:
-            sources_ok.append("reddit")
-    except Exception:
-        pass
+    sources_ok = [k for k, v in signals.items() if v]
+    blended = blend(prior, signals)
 
-    try:
-        trends_signal = await fetch_trends_signal()
-        if trends_signal:
-            sources_ok.append("trends")
-    except Exception:
-        pass
+    if persist:
+        try:
+            write_probabilities_to_db(db, blended, sources_ok)
+            save_snapshot(db, "scenarios", {"probabilities": blended, "prior": prior, "sources_active": sources_ok})
+        except Exception:
+            db.rollback()
 
-    try:
-        wiki_signal = await fetch_wiki_poll_signal()
-        if wiki_signal:
-            sources_ok.append("wiki_polls")
-    except Exception:
-        pass
-
-    blended = _blend(
-        prior=prior,
-        news=news_signal,
-        reddit=reddit_signal,
-        trends=trends_signal,
-        wiki_polls=wiki_signal,
-        polymarket=None,
-    )
-
-    # Write blended probabilities back to DB so scenario cards show live values
-    try:
-        write_probabilities_to_db(db, blended, sources_ok)
-    except Exception:
-        pass
-
+    weights = {"prior": _PRIOR_WEIGHT, **_BASE_WEIGHTS}
     return {
         "probabilities": blended,
-        "sources": {
-            "wiki_polls": {"available": bool(wiki_signal),   "signal": wiki_signal},
-            "news":       {"available": bool(news_signal),   "signal": news_signal},
-            "reddit":     {"available": bool(reddit_signal), "signal": reddit_signal},
-            "trends":     {"available": bool(trends_signal), "signal": trends_signal},
-        },
+        "sources": {k: {"available": bool(v), "signal": v, "weight": _BASE_WEIGHTS[k]} for k, v in signals.items()},
         "sources_active": sources_ok,
         "prior": prior,
+        "weights": weights,
         "methodology": (
-            "Bayesian blend: 45% analyst prior + 15% Wikipedia election polls "
-            "+ 20% RSS news VADER sentiment "
-            "+ 10% Reddit r/france keyword frequency + 10% Google Trends search volume. "
-            "Keyword matching maps party names and political terms to scenario slugs. "
-            "VADER compound score weights news articles by sentiment polarity. "
-            "Sources absent at fetch time have their weight redistributed to the prior. "
-            "Polymarket prediction markets override all signals when available."
+            "40% fixed analyst prior + 35% presidential poll simulation (Wikipedia polls, Monte Carlo) "
+            "+ 15% news (Groq article extraction, keyword fallback) + 5% Reddit keywords + 5% Google Trends. "
+            "Unavailable sources hand their weight to the prior. The prior is never overwritten by the blend."
         ),
     }

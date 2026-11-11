@@ -8,6 +8,10 @@ from models import (
     Holding, ECBScenario
 )
 import hashlib
+from cac40 import CAC40
+
+
+SCENARIO_PRIORS = {"centrist": 0.35, "national_rally": 0.25, "left_wing": 0.25, "hung_parliament": 0.15}
 
 
 def _now():
@@ -255,7 +259,7 @@ def seed_demo_data(db: Session):
 
     scenarios = []
     for s in scenarios_data:
-        scenario = PoliticalScenario(**s, last_updated=_now())
+        scenario = PoliticalScenario(**s, prior_probability=s["probability"], last_updated=_now())
         db.add(scenario)
         scenarios.append(scenario)
     db.flush()
@@ -281,46 +285,13 @@ def seed_demo_data(db: Session):
 
     # --- Companies (CAC 40 constituents as of 2024) ---
     cac40_data = [
-        {"ticker": "AI.PA", "isin": "FR0000120073", "name": "Air Liquide", "sector": "Materials", "subsector": "Industrial Gases"},
-        {"ticker": "AIR.PA", "isin": "NL0000235190", "name": "Airbus", "sector": "Industrials", "subsector": "Aerospace & Defence"},
-        {"ticker": "CS.PA", "isin": "FR0000120628", "name": "AXA", "sector": "Financials", "subsector": "Insurance"},
-        {"ticker": "BNP.PA", "isin": "FR0000131104", "name": "BNP Paribas", "sector": "Financials", "subsector": "Banks"},
-        {"ticker": "EN.PA", "isin": "FR0000120503", "name": "Bouygues", "sector": "Industrials", "subsector": "Construction & Engineering"},
-        {"ticker": "CAP.PA", "isin": "FR0000125338", "name": "Capgemini", "sector": "Information Technology", "subsector": "IT Services"},
-        {"ticker": "CA.PA", "isin": "FR0000120172", "name": "Carrefour", "sector": "Consumer Staples", "subsector": "Food Retail"},
-        {"ticker": "SGO.PA", "isin": "FR0000125007", "name": "Compagnie de Saint-Gobain", "sector": "Materials", "subsector": "Building Materials"},
-        {"ticker": "ACA.PA", "isin": "FR0000045072", "name": "Crédit Agricole", "sector": "Financials", "subsector": "Banks"},
-        {"ticker": "DSY.PA", "isin": "FR0000130650", "name": "Dassault Systèmes", "sector": "Information Technology", "subsector": "Software"},
-        {"ticker": "EL.PA", "isin": "FR0000121667", "name": "EssilorLuxottica", "sector": "Consumer Discretionary", "subsector": "Healthcare Equipment"},
-        {"ticker": "EUFI.PA", "isin": "FR0014000MR3", "name": "Eurofins Scientific", "sector": "Healthcare", "subsector": "Life Sciences Tools"},
-        {"ticker": "RMS.PA", "isin": "FR0000052292", "name": "Hermès International", "sector": "Consumer Discretionary", "subsector": "Luxury Goods"},
-        {"ticker": "KER.PA", "isin": "FR0000121485", "name": "Kering", "sector": "Consumer Discretionary", "subsector": "Luxury Goods"},
-        {"ticker": "OR.PA", "isin": "FR0000120321", "name": "L'Oréal", "sector": "Consumer Staples", "subsector": "Personal Products"},
-        {"ticker": "LR.PA", "isin": "FR0010307819", "name": "Legrand", "sector": "Industrials", "subsector": "Electrical Equipment"},
-        {"ticker": "MC.PA", "isin": "FR0000121014", "name": "LVMH", "sector": "Consumer Discretionary", "subsector": "Luxury Goods"},
-        {"ticker": "ML.PA", "isin": "FR0000131906", "name": "Michelin", "sector": "Consumer Discretionary", "subsector": "Tyres"},
-        {"ticker": "ORA.PA", "isin": "FR0000133308", "name": "Orange", "sector": "Communication Services", "subsector": "Telecoms"},
-        {"ticker": "RI.PA", "isin": "FR0000120693", "name": "Pernod Ricard", "sector": "Consumer Staples", "subsector": "Beverages"},
-        {"ticker": "PUB.PA", "isin": "FR0000130577", "name": "Publicis Groupe", "sector": "Communication Services", "subsector": "Advertising"},
-        {"ticker": "RNO.PA", "isin": "FR0000131906", "name": "Renault", "sector": "Consumer Discretionary", "subsector": "Automobiles"},
-        {"ticker": "SAF.PA", "isin": "FR0000073272", "name": "Safran", "sector": "Industrials", "subsector": "Aerospace & Defence"},
-        {"ticker": "SAN.PA", "isin": "FR0000120578", "name": "Sanofi", "sector": "Healthcare", "subsector": "Pharmaceuticals"},
-        {"ticker": "SU.PA", "isin": "FR0000121972", "name": "Schneider Electric", "sector": "Industrials", "subsector": "Electrical Equipment"},
-        {"ticker": "GLE.PA", "isin": "FR0000130809", "name": "Société Générale", "sector": "Financials", "subsector": "Banks"},
-        {"ticker": "STLAM.MI", "isin": "NL00150001Q9", "name": "Stellantis", "sector": "Consumer Discretionary", "subsector": "Automobiles"},
-        {"ticker": "STM.PA", "isin": "NL0000226223", "name": "STMicroelectronics", "sector": "Information Technology", "subsector": "Semiconductors"},
-        {"ticker": "TEP.PA", "isin": "FR0000005969", "name": "Teleperformance", "sector": "Industrials", "subsector": "Business Services"},
-        {"ticker": "HO.PA", "isin": "FR0000121501", "name": "Thales", "sector": "Industrials", "subsector": "Aerospace & Defence"},
-        {"ticker": "TTE.PA", "isin": "FR0014000N1E", "name": "TotalEnergies", "sector": "Energy", "subsector": "Integrated Oil & Gas"},
-        {"ticker": "URW.AS", "isin": "FR0013326246", "name": "Unibail-Rodamco-Westfield", "sector": "Real Estate", "subsector": "Retail REITs"},
-        {"ticker": "VIE.PA", "isin": "FR0000124141", "name": "Veolia Environnement", "sector": "Utilities", "subsector": "Water & Waste"},
-        {"ticker": "DG.PA", "isin": "FR0000125486", "name": "Vinci", "sector": "Industrials", "subsector": "Construction & Engineering"},
-        {"ticker": "VIV.PA", "isin": "FR0000127771", "name": "Vivendi", "sector": "Communication Services", "subsector": "Media"},
-        {"ticker": "WLN.PA", "isin": "FR0011981968", "name": "Worldline", "sector": "Information Technology", "subsector": "Payment Processing"},
-        {"ticker": "MT.AS", "isin": "LU1598757687", "name": "ArcelorMittal", "sector": "Materials", "subsector": "Steel"},
-        {"ticker": "EURAZ.PA", "isin": "FR0000121121", "name": "Eurazeo", "sector": "Financials", "subsector": "Asset Management"},
-        {"ticker": "ALO.PA", "isin": "FR0010220475", "name": "Alstom", "sector": "Industrials", "subsector": "Rail Transport Equipment"},
-        {"ticker": "ENGI.PA", "isin": "FR0010208488", "name": "Engie", "sector": "Utilities", "subsector": "Electric & Gas"},
+        {
+            "ticker": c["ticker"], "isin": c["isin"], "name": c["name"], "sector": c["sector"],
+            "subsector": c["subsector"], "french_revenue_pct": c["french_pct"],
+            "european_revenue_pct": c["euro_pct"], "global_revenue_pct": c["global_pct"],
+            "revenue_source": "Approximate split from 2023 annual reports",
+        }
+        for c in CAC40
     ]
 
     companies = []
@@ -346,7 +317,7 @@ def seed_demo_data(db: Session):
         {"company_ticker": "ENGI.PA", "shock_type": "energy", "sensitivity_coefficient": 0.3, "confidence": "low", "rationale": "Utility has mixed energy exposure. SYNTHETIC ILLUSTRATIVE."},
         {"company_ticker": "AIR.PA", "shock_type": "eur", "sensitivity_coefficient": 0.4, "confidence": "low", "rationale": "Aerospace exporter benefits from weaker EUR. SYNTHETIC ILLUSTRATIVE."},
         {"company_ticker": "SAF.PA", "shock_type": "eur", "sensitivity_coefficient": 0.4, "confidence": "low", "rationale": "Aerospace/defence exporter. SYNTHETIC ILLUSTRATIVE."},
-        {"company_ticker": "URW.AS", "shock_type": "ecb_rate", "sensitivity_coefficient": -0.02, "confidence": "low", "rationale": "Real estate REIT highly sensitive to rate changes. SYNTHETIC ILLUSTRATIVE."},
+        {"company_ticker": "URW.PA", "shock_type": "ecb_rate", "sensitivity_coefficient": -0.02, "confidence": "low", "rationale": "Real estate REIT highly sensitive to rate changes. SYNTHETIC ILLUSTRATIVE."},
     ]
     ticker_to_company = {c.ticker: c for c in companies}
     for e in exposure_examples:
