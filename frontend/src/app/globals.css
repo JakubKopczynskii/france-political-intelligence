@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sys-bg: #090909;
+  --sys-surface: #101010;
+  --sys-elevated: #151515;
+  --sys-border: #262626;
+  --sys-text: #F5F5F5;
+  --sys-muted: #929292;
+  --sys-dim: #606060;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background-color: var(--sys-bg);
+  color: var(--sys-text);
+  font-family: 'Geist', 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 2px;
+  height: 2px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--sys-border);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sys-dim);
+}
+
+/* Monospaced utility */
+.font-mono {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+}
+
+/* System label style */
+.sys-label {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sys-dim);
+}
+
+/* Thin border utility */
+.border-sys {
+  border-color: var(--sys-border);
+}
+
+/* Subtle range input */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1px;
+  background: var(--sys-border);
+  outline: none;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sys-text);
+  cursor: pointer;
+  border: none;
+}
+input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sys-text);
+  cursor: pointer;
+  border: none;
+}
+
+/* Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.sys-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Pulse */
+@keyframes sysPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.sys-pulse {
+  animation: sysPulse 2s ease-in-out infinite;
+}
